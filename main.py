@@ -3,7 +3,7 @@ from tkinter import ttk,filedialog,messagebox
 from checker import run_check,export_csv
 class App(tk.Tk):
  def __init__(self):
-  super().__init__();self.title("DECK 상세도 자동 검토기 V14");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
+  super().__init__();self.title("DECK 상세도 자동 검토기 V15");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
  def ui(self):
   f=ttk.Frame(self,padding=12);f.pack(fill="x")
   for r,(lab,var,ext) in enumerate([("상세도 DXF",self.d,"*.dxf"),("집계표 Excel",self.x,"*.xlsx")]):
@@ -15,7 +15,10 @@ class App(tk.Tk):
   for c,n in zip(cs,names):self.t.heading(c,text=n);self.t.column(c,width=160 if c not in ("type","result") else 90)
   self.t.tag_configure("needcheck",foreground="#d00000",font=("TkDefaultFont",9,"bold"))
   self.t.tag_configure("separator",foreground="#202020",font=("TkDefaultFont",8,"bold"))
-  self.t.pack(fill="both",expand=True)
+  self.scroll_y=ttk.Scrollbar(self,orient="vertical",command=self.t.yview)
+  self.t.configure(yscrollcommand=self.scroll_y.set)
+  self.scroll_y.pack(side="right",fill="y")
+  self.t.pack(side="left",fill="both",expand=True)
  def pick(self,v,e):
   p=filedialog.askopenfilename(filetypes=[("파일",e)])
   if p:v.set(p)

@@ -4,6 +4,7 @@ from connector_v9 import read_connector_v9
 from connector_v10 import analyze as read_connector_v10
 from connector_shape_v11 import analyze as read_shape_v11
 from connector_v13 import analyze as read_connector_v13
+from connector_v15 import analyze as read_connector_v15
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -33,6 +34,7 @@ def run_check(dxf,xlsx):
     conn10=read_connector_v10(dxf)
     shape11=read_shape_v11(dxf)
     conn13=read_connector_v13(dxf)
+    conn15=read_connector_v15(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -308,6 +310,63 @@ def run_check(dxf,xlsx):
                 "상면 세로치수: "+(", ".join(f"{v:g}" for v in tls) if tls else "인식 실패"),
                 "B-B: "+(", ".join(f"{v:g}" for v in bls) if bls else "확인"),
                 "확인","평면도(상면) 끝단 55 위치 확인 필요"))
+
+        # V15 user-defined wave-wire cross checks
+        v15=conn15.get(typ,{})
+        p5q=v15.get("phi5_qty",0)
+        p5l=v15.get("phi5_lengths",[])
+        p6q=v15.get("phi6_qty")
+        p6l=v15.get("phi6_lengths",[])
+        tsp=v15.get("top_spacing")
+        asp=v15.get("aa_spacing")
+        bbl=v15.get("bb_lengths",[])
+
+        rows.append(row(typ,"Φ5 파형철선 길이/수량",
+            (" / ".join(f"{x}mm×1EA" for x in p5l) if p5l else "우측 세로치수 인식 실패"),
+            (f"상면 Φ5 표기 {p5q}곳 → {p5q}EA" if p5q else "상면 Φ5 표기 인식 실패"),
+            "","O" if p5q and len(p5l)==p5q else "확인",
+            "Φ5 문자 표기 기준. 55 치수는 Φ5 판정에 사용하지 않음"))
+
+        rows.append(row(typ,"Φ6 파형철선 길이/수량",
+            (f"{p6l[0]}mm / {p6q}EA" if p6l and p6q else "좌측 세로치수 또는 간격 인식 실패"),
+            (f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g} → {p6q}EA" if tsp and p6q else "상면 배치 인식 실패"),
+            "","O" if p6l and p6q and abs(tsp[0]*tsp[1]-tsp[2])<=1 else "확인",
+            "Φ5 표기가 없는 주 파형철선은 Φ6"))
+
+        expected=sorted(set(p5l+p6l))
+        missing=[x for x in expected if x not in bbl]
+        rows.append(row(typ,"전단연결재 길이(상면↔B-B)",
+            ", ".join(map(str,expected)) if expected else "상면 길이 인식 실패",
+            ", ".join(map(str,bbl)) if bbl else "B-B 길이 인식 실패",
+            "","O" if expected and not missing else ("X" if expected and bbl else "확인"),
+            ("동일 길이 확인" if expected and not missing else ("B-B 누락: "+", ".join(map(str,missing)) if missing else "길이 확인 필요"))))
+
+        rows.append(row(typ,"파형철선 형상(상면↔A-A)",
+            "상면: 파형철선",
+            f"A-A: 수직 실선 {v15.get('aa_vertical_count',0)}개",
+            "","O" if v15.get("aa_wave") else "확인",
+            "A-A에서는 파형철선을 수직 실선 형상으로 확인"))
+
+        if tsp and asp:
+            same=(tsp==asp)
+            ta=abs(tsp[0]*tsp[1]-tsp[2])<=1
+            aaok=abs(asp[0]*asp[1]-asp[2])<=1
+            rows.append(row(typ,"전단연결재 배치(상면↔A-A)",
+                f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}",
+                f"{asp[0]}@{asp[1]:g}={asp[2]:g}",
+                "","O" if same and ta and aaok else "X",
+                f"상면 산술 {'O' if ta else 'X'} / A-A 산술 {'O' if aaok else 'X'}"))
+        else:
+            rows.append(row(typ,"전단연결재 배치(상면↔A-A)",
+                (f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}" if tsp else "인식 실패"),
+                (f"{asp[0]}@{asp[1]:g}={asp[2]:g}" if asp else "인식 실패"),
+                "","확인","상면/A-A 배치치수 인식 필요"))
+
+        # Material-table cross check remains conservative until the exact material rows are parsed.
+        rows.append(row(typ,"전단연결재 길이/수량(상면↔재료표)",
+            f"Φ5: {','.join(map(str,p5l)) or '확인'} / {p5q or '확인'}EA; Φ6: {','.join(map(str,p6l)) or '확인'} / {p6q or '확인'}EA",
+            "재료표 길이·수량 판독값과 비교",
+            "","확인","재료표의 Φ5/Φ6 길이별 수량 매핑 확인 필요"))
     # V13: remove obsolete connector diagnostics from V8~V12.
     # These used nearby L= values or old A-A heuristics and can conflict with the geometry-first result.
     obsolete={
@@ -318,6 +377,10 @@ def run_check(dxf,xlsx):
         "TRUSS GR 높이",
         "전단연결재 종류(A-A/B-B/상세)",
         "Φ5 파형철선(끝단 55 기준)",
+        "전단연결재 종류(V13)",
+        "Φ5 파형철선 길이/수량",
+        "Φ6 파형철선 길이/수량",
+        "주 전단연결재(파형철선) 길이/수량",
     }
     rows=[r for r in rows if r["item"] not in obsolete]
     return rows
