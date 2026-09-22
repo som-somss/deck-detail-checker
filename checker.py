@@ -1,5 +1,6 @@
 import csv
 from dxf_reader import read_dxf_specs, read_v7_cross_checks, read_v8_connector_checks
+from connector_v9 import read_connector_v9
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -25,6 +26,7 @@ def run_check(dxf,xlsx):
     geo,mat,dxf_types,extra=read_dxf_specs(dxf)
     cross=read_v7_cross_checks(dxf)
     conn=read_v8_connector_checks(dxf)
+    conn9=read_connector_v9(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -188,6 +190,32 @@ def run_check(dxf,xlsx):
                 rows.append(row(typ,"TRUSS GR 높이",f"{dh:g} mm" if dh is not None else "인식 실패",
                                 ", ".join(f"{v:g} mm" for v in mhs) if mhs else "인식 실패","",
                                 "확인","높이는 고정하지 않으며 상세 왼쪽 치수와 재료표 명시값을 비교"))
+
+        # V9: 전단연결재 간격→수량, 길이 교차검토.
+        v9=conn9.get(typ,{})
+        sps=v9.get("spacing",[])
+        # Deduplicate same written spacing.
+        uniq={}
+        for q in sps:
+            uniq[(q["n_space"],q["spacing"],q["total"])]=q
+        for q in uniq.values():
+            arithmetic_ok=abs(q["n_space"]*q["spacing"]-q["total"])<=0.5
+            rows.append(row(typ,"전단연결재 간격/계산수량",
+                f'{q["n_space"]}@{q["spacing"]:g}={q["total"]:g} mm → {q["calculated_qty"]}EA',
+                "","",
+                "O" if arithmetic_ok else "X",
+                "" if arithmetic_ok else "간격수×간격과 총 배치길이가 불일치"))
+        # Length evidence: top left/right and B-B are cross-check sources.
+        tl=v9.get("top_lengths",[]); bl=v9.get("bb_lengths",[]); dl=v9.get("detail_lengths",[])
+        if tl or bl or dl:
+            sets=[set(x) for x in (tl,bl,dl) if x]
+            common=set.intersection(*sets) if len(sets)>=2 else set()
+            rows.append(row(typ,"전단연결재 길이",
+                "상면 L="+(",".join(f"{x:g}" for x in tl) if tl else "확인"),
+                "B-B L="+(",".join(f"{x:g}" for x in bl) if bl else "확인"),
+                "상세 L="+(",".join(f"{x:g}" for x in dl) if dl else "확인"),
+                "O" if len(sets)>=2 and common else "확인",
+                "" if len(sets)>=2 and common else "상면 좌/우·B-B·상세의 종류/직경별 길이 연결 확인 필요"))
     return rows
 
 def export_csv(rows,path):
