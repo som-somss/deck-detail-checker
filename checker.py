@@ -241,16 +241,16 @@ def run_check(dxf,xlsx):
         known=[v for v in vals if v]
         if len(known)>=2:
             ok=len(set(known))==1
-            rows.append(row(typ,"전단연결재 종류(형상 우선)",
+            rows.append(row(typ,"전단연결재 종류(A-A/B-B/상세)",
                 f"A-A:{sh.get('aa') or '확인'} / B-B:{sh.get('bb') or '확인'}",
                 f"전단연결재상세:{sh.get('detail') or '확인'}","",
                 "O" if ok else "X",
                 sh.get("note","")))
         else:
-            rows.append(row(typ,"전단연결재 종류(형상 우선)",
+            rows.append(row(typ,"전단연결재 종류(A-A/B-B/상세)",
                 f"A-A:{sh.get('aa') or '확인'} / B-B:{sh.get('bb') or '확인'}",
                 f"전단연결재상세:{sh.get('detail') or '확인'}","",
-                "확인","형상 2곳 이상에서 같은 종류가 확인되어야 확정 / "+sh.get("note","")))
+                "확인","A-A와 B-B는 서로 다른 형상으로 판독하며, 2곳 이상에서 같은 전단연결재 종류가 확인되어야 확정 / "+sh.get("note","")))
     return rows
 
 def export_csv(rows,path):

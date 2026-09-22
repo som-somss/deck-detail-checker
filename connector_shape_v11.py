@@ -30,7 +30,7 @@ def _titles(a):
     d={}
     for x,y,t in a:
         m=TYPE_RE.search(t)
-        if m and "TYPE" in t.upper(): d.setdefault(m.group(0).upper(),(x,y))
+        if m: d.setdefault(m.group(0).upper(),(x,y))
     return d
 
 def _heading(a,tx,ty,words):
@@ -88,32 +88,91 @@ def _classify_section(seg, mode):
     if mode=="AA" and ve>=2 and tr<need: return "파형철선", f"형상: 수직 연결재 {ve}개"
     return "", f"형상 판정 부족(꼭짓점 {tr}, 수직선 {ve})"
 
+
+def _section_heading(a,tx,ty,sec):
+    # Use the actual structural section heading, not "배근도 (단면 ...)".
+    key=("단면 "+sec).replace(" ","").upper()
+    cand=[]
+    for x,y,t in a:
+        u=t.replace(" ","").upper()
+        if key in u and "배근도" not in t:
+            cand.append(((x-tx)**2+(y-ty)**2,x,y,t))
+    if not cand: return None
+    cand.sort()
+    return cand[0][1:]
+
+def _near_labels(a,cx,cy,rx,ry):
+    return [t for x,y,t in a if abs(x-cx)<=rx and abs(y-cy)<=ry]
+
+def _semantic_from_labels(labels):
+    joined=" ".join(labels).upper().replace(" ","")
+    has_truss="TRUSS" in joined
+    has_wave="파형철선" in joined
+    if has_truss and not has_wave: return "TRUSS GR"
+    if has_wave and not has_truss: return "파형철선"
+    return ""
+
 def analyze(path):
     doc=ezdxf.readfile(path); msp=doc.modelspace()
     a=_texts(msp); titles=_titles(a); out={}
     for typ,(tx,ty) in titles.items():
-        ah=_heading(a,tx,ty,["단면 A-A","단면A-A"])
-        bh=_heading(a,tx,ty,["단면 B-B","단면B-B"])
+        ah=_section_heading(a,tx,ty,"A-A")
+        bh=_section_heading(a,tx,ty,"B-B")
         dh=_heading(a,tx,ty,["전단연결재 상세","전단연결재상세"])
-        aa=("", "A-A 제목 인식 실패")
-        bb=("", "B-B 제목 인식 실패")
-        detail=("", "상세 제목 인식 실패")
+
+        aa_kind=""; aa_note="A-A 제목 인식 실패"
+        bb_kind=""; bb_note="B-B 제목 인식 실패"
+        de_kind=""; de_note="상세 제목 인식 실패"
+
         if ah:
+            # A-A: straight repeated vertical connector strokes = wave wire;
+            # repeated connected /\ geometry = TRUSS GR.
             seg=_segments(msp,ah[0],ah[1]-650,1600,1300)
-            aa=_classify_section(seg,"AA")
+            tr=_truss_score(seg); ve=_vertical_score(seg)
+            if tr>=2:
+                aa_kind="TRUSS GR"; aa_note=f"A-A ∧/A형 꼭짓점 {tr}개"
+            elif ve>=2:
+                aa_kind="파형철선"; aa_note=f"A-A 수직 실선형 연결재 {ve}개"
+            else:
+                aa_note=f"A-A 형상 부족(꼭짓점 {tr}, 수직 {ve})"
+
         if bh:
-            seg=_segments(msp,bh[0],bh[1]-900,1400,2200)
-            bb=_classify_section(seg,"BB")
-        if dh:
-            seg=_segments(msp,dh[0],dh[1]-500,1800,1200)
-            # Detail: repeated triangular connected legs are TRUSS. Otherwise do not force a type.
+            # B-B has a DIFFERENT shape from A-A.
+            # Use both its own geometry and the nearby explicit left-side label.
+            labels=_near_labels(a,bh[0],bh[1]-900,1700,2300)
+            labkind=_semantic_from_labels(labels)
+            seg=_segments(msp,bh[0],bh[1]-900,1500,2200)
             tr=_truss_score(seg)
-            if tr>=2: detail=("TRUSS GR",f"상세 형상: 연결된 경사 꼭짓점 {tr}개")
-            else: detail=("",f"상세 형상 판정 부족(꼭짓점 {tr})")
-        known=[x[0] for x in (aa,bb,detail) if x[0]]
+            if labkind=="파형철선":
+                bb_kind="파형철선"; bb_note="B-B 물결형 영역 + '(파형철선)' 표기"
+            elif labkind=="TRUSS GR":
+                bb_kind="TRUSS GR"; bb_note="B-B 영역 + 'TRUSS GR' 표기"
+            elif tr>=4:
+                bb_kind="TRUSS GR"; bb_note=f"B-B 삼각 지그재그 꼭짓점 {tr}개"
+            else:
+                bb_note=f"B-B 종류 표기/형상 확인 필요(지그재그 꼭짓점 {tr})"
+
+        if dh:
+            # Detail: text is strong evidence, geometry supports TRUSS.
+            labels=_near_labels(a,dh[0],dh[1]-450,2000,1500)
+            labkind=_semantic_from_labels(labels)
+            seg=_segments(msp,dh[0],dh[1]-500,1800,1300)
+            tr=_truss_score(seg)
+            if labkind:
+                de_kind=labkind; de_note=f"전단연결재 상세 표기: {labkind}"
+            elif tr>=2:
+                de_kind="TRUSS GR"; de_note=f"전단연결재 상세 트러스 형상 꼭짓점 {tr}개"
+            else:
+                de_note="전단연결재 상세 종류 확인 필요"
+
+        # Geometry is allowed to differ by view. Compare only the semantic TYPE.
+        known=[v for v in (aa_kind,bb_kind,de_kind) if v]
         final=""
-        if known and len(set(known))==1 and len(known)>=2: final=known[0]
-        return_note=" / ".join(x[1] for x in (aa,bb,detail))
-        out[typ]={"aa":aa[0],"bb":bb[0],"detail":detail[0],
-                  "final":final,"note":return_note}
+        conflict=False
+        if len(known)>=2:
+            if len(set(known))==1: final=known[0]
+            else: conflict=True
+        out[typ]={"aa":aa_kind,"bb":bb_kind,"detail":de_kind,
+                  "final":final,"conflict":conflict,
+                  "note":" / ".join((aa_note,bb_note,de_note))}
     return out

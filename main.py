@@ -3,7 +3,7 @@ from tkinter import ttk,filedialog,messagebox
 from checker import run_check,export_csv
 class App(tk.Tk):
  def __init__(self):
-  super().__init__();self.title("DECK 상세도 자동 검토기 V11");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
+  super().__init__();self.title("DECK 상세도 자동 검토기 V12");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
  def ui(self):
   f=ttk.Frame(self,padding=12);f.pack(fill="x")
   for r,(lab,var,ext) in enumerate([("상세도 DXF",self.d,"*.dxf"),("집계표 Excel",self.x,"*.xlsx")]):
@@ -13,6 +13,8 @@ class App(tk.Tk):
   cs=("type","item","drawing","material","excel","result","note");fr=ttk.Frame(self,padding=12);fr.pack(fill="both",expand=True);self.t=ttk.Treeview(fr,columns=cs,show="headings")
   names=["TYPE","항목","상세도 실제 형상","상세도 재료표","집계표","판정","비고"]
   for c,n in zip(cs,names):self.t.heading(c,text=n);self.t.column(c,width=160 if c not in ("type","result") else 90)
+  self.t.tag_configure("needcheck",foreground="#d00000",font=("TkDefaultFont",9,"bold"))
+  self.t.tag_configure("separator",foreground="#202020",font=("TkDefaultFont",8,"bold"))
   self.t.pack(fill="both",expand=True)
  def pick(self,v,e):
   p=filedialog.askopenfilename(filetypes=[("파일",e)])
@@ -22,7 +24,13 @@ class App(tk.Tk):
   except Exception as e:messagebox.showerror("검토 오류",str(e))
  def show(self):
   self.t.delete(*self.t.get_children());a=[r for r in self.rows if not self.err.get() or r["result"]!="O"]
-  for r in a:self.t.insert("", "end",values=tuple(r[k] for k in ("type","item","drawing","material","excel","result","note")))
+  last=None
+  for r in a:
+   if last is not None and r["type"]!=last:
+    self.t.insert("", "end",values=("━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━","━━━━━━━━━━━━━━━━"),tags=("separator",))
+   tags=("needcheck",) if r["result"]=="확인" else ()
+   self.t.insert("", "end",values=tuple(r[k] for k in ("type","item","drawing","material","excel","result","note")),tags=tags)
+   last=r["type"]
   self.s.config(text=f"전체 {len(self.rows)} / 오류·확인 {sum(r['result']!='O' for r in self.rows)}")
  def save(self):
   p=filedialog.asksaveasfilename(defaultextension=".csv")
