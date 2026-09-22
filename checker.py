@@ -2,6 +2,7 @@ import csv
 from dxf_reader import read_dxf_specs, read_v7_cross_checks, read_v8_connector_checks
 from connector_v9 import read_connector_v9
 from connector_v10 import analyze as read_connector_v10
+from connector_shape_v11 import analyze as read_shape_v11
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -29,6 +30,7 @@ def run_check(dxf,xlsx):
     conn=read_v8_connector_checks(dxf)
     conn9=read_connector_v9(dxf)
     conn10=read_connector_v10(dxf)
+    shape11=read_shape_v11(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -232,6 +234,23 @@ def run_check(dxf,xlsx):
                 f"끝단 55: {q55}곳 → Φ5 {q55}EA",
                 "세로길이 후보: "+(", ".join(f"{v:g}" for v in cand) if cand else "인식 실패"),"",
                 "확인","55로 수량 판정. 대응 좌/우 세로길이만 최종 매핑"))
+
+        # V11 authoritative type classification: geometry first.
+        sh=shape11.get(typ,{})
+        vals=[sh.get("aa",""),sh.get("bb",""),sh.get("detail","")]
+        known=[v for v in vals if v]
+        if len(known)>=2:
+            ok=len(set(known))==1
+            rows.append(row(typ,"전단연결재 종류(형상 우선)",
+                f"A-A:{sh.get('aa') or '확인'} / B-B:{sh.get('bb') or '확인'}",
+                f"전단연결재상세:{sh.get('detail') or '확인'}","",
+                "O" if ok else "X",
+                sh.get("note","")))
+        else:
+            rows.append(row(typ,"전단연결재 종류(형상 우선)",
+                f"A-A:{sh.get('aa') or '확인'} / B-B:{sh.get('bb') or '확인'}",
+                f"전단연결재상세:{sh.get('detail') or '확인'}","",
+                "확인","형상 2곳 이상에서 같은 종류가 확인되어야 확정 / "+sh.get("note","")))
     return rows
 
 def export_csv(rows,path):
