@@ -3,7 +3,7 @@ from tkinter import ttk,filedialog,messagebox
 from checker import run_check,export_csv
 class App(tk.Tk):
  def __init__(self):
-  super().__init__();self.title("DECK 상세도 자동 검토기 V13");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
+  super().__init__();self.title("DECK 상세도 자동 검토기 V14");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
  def ui(self):
   f=ttk.Frame(self,padding=12);f.pack(fill="x")
   for r,(lab,var,ext) in enumerate([("상세도 DXF",self.d,"*.dxf"),("집계표 Excel",self.x,"*.xlsx")]):
@@ -28,7 +28,7 @@ class App(tk.Tk):
   for r in a:
    if last is not None and r["type"]!=last:
     self.t.insert("", "end",values=("━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━━━━━━━━━━━━━","━━━━","━━━━━━━━━━━━━━━━"),tags=("separator",))
-   tags=("needcheck",) if r["result"]=="확인" else ()
+   tags=("needcheck",) if r["result"] in ("확인","X") else ()
    self.t.insert("", "end",values=tuple(r[k] for k in ("type","item","drawing","material","excel","result","note")),tags=tags)
    last=r["type"]
   self.s.config(text=f"전체 {len(self.rows)} / 오류·확인 {sum(r['result']!='O' for r in self.rows)}")

@@ -263,6 +263,32 @@ def run_check(dxf,xlsx):
             "X" if k13=="불일치" else ("O" if k13 else "확인"),
             "A-A/B-B/전단연결재 상세는 각 뷰의 고유 형상으로 종류 판독"))
         p5=q13.get("phi5_qty",0); tls=q13.get("top_lengths",[]); bls=q13.get("bb_lengths",[])
+        # V14: main wave-wire row (Φ6 when Φ6 is explicitly present in detail/material evidence).
+        # n@spacing means n spaces, therefore connector quantity is n+1.
+        sp13=q13.get("top_spacing",[])
+        matinfo=conn.get(typ,{})
+        dphi=set(matinfo.get("detail",{}).get("wave_phi",[]) or [])
+        mphi=set(matinfo.get("material",{}).get("wave_phi",[]) or [])
+        phi6=(6 in dphi) or (6 in mphi)
+        if k13=="파형철선":
+            if sp13:
+                n13, pitch13, total13=sp13[0]
+                qty13=n13+1
+                arith_ok=abs(n13*pitch13-total13)<=1.0
+                name13="Φ6 파형철선 길이/수량" if phi6 else "주 전단연결재(파형철선) 길이/수량"
+                len_txt=", ".join(f"{v:g}mm" for v in tls) if tls else "길이 인식 실패"
+                rows.append(row(typ,name13,
+                    f"{len_txt} / {n13}@{pitch13:g}={total13:g} → {qty13}EA",
+                    "전단연결재 상세·재료표 Φ6 확인" if phi6 else "Φ6 직경 명시 인식 필요",
+                    "B-B: "+(", ".join(f"{v:g}" for v in bls) if bls else "확인"),
+                    ("O" if arith_ok and tls and phi6 else "확인"),
+                    "간격 n개는 연결재 n+1EA. 길이는 상면/B-B 지정 세로치수만 사용"))
+            else:
+                rows.append(row(typ,
+                    "Φ6 파형철선 길이/수량" if phi6 else "주 전단연결재(파형철선) 길이/수량",
+                    "상면 n@간격 인식 실패",
+                    "전단연결재 상세·재료표 Φ6 확인" if phi6 else "Φ6 직경 명시 인식 필요",
+                    "","확인","주 파형철선 수량·길이 확인 필요"))
         if p5:
             if len(tls)==p5:
                 rows.append(row(typ,"Φ5 파형철선 길이/수량",
