@@ -5,6 +5,7 @@ from connector_v10 import analyze as read_connector_v10
 from connector_shape_v11 import analyze as read_shape_v11
 from connector_v13 import analyze as read_connector_v13
 from connector_v15 import analyze as read_connector_v15
+from connector_v17 import analyze as read_connector_v17
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -35,6 +36,7 @@ def run_check(dxf,xlsx):
     shape11=read_shape_v11(dxf)
     conn13=read_connector_v13(dxf)
     conn15=read_connector_v15(dxf)
+    conn17=read_connector_v17(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -370,6 +372,50 @@ def run_check(dxf,xlsx):
             f"Φ5: {','.join(map(str,p5l)) or '확인'} / {p5q or '확인'}EA; Φ6: {','.join(map(str,p6l)) or '확인'} / {p6q or '확인'}EA",
             "재료표 길이·수량 판독값과 비교",
             "","확인","재료표의 Φ5/Φ6 길이별 수량 매핑 확인 필요"))
+
+        # V17: "평면도(상면)" is one VIEW; compare its four surrounding sides.
+        q17=conn17.get(typ,{})
+        lvals=q17.get("left_long",[]); rvals=q17.get("right_long",[])
+        bvals=q17.get("bb_left",[])
+        side_expected=sorted(set((lvals[-1:] if lvals else [])+(rvals[-2:] if rvals else [])))
+        miss=[x for x in side_expected if x not in bvals]
+        rows.append(row(typ,"전단연결재 치수[평면도(상면) 좌·우↔B-B 좌측]",
+            "좌측: "+(", ".join(map(str,lvals)) if lvals else "인식 실패")+" / 우측: "+(", ".join(map(str,rvals)) if rvals else "인식 실패"),
+            "B-B 좌측: "+(", ".join(map(str,bvals)) if bvals else "인식 실패"),
+            "","O" if side_expected and not miss else ("X" if side_expected and bvals else "확인"),
+            "평면도(상면) 배치의 좌·우측 치수와 B-B 좌측 치수 비교"))
+
+        tsp=(q17.get("top_sp") or [None])[0]
+        bsp=(q17.get("bottom_sp") or [None])[0]
+        asp=(q17.get("aa_sp") or [None])[0]
+        plan_sp=tsp or bsp
+        if plan_sp and asp:
+            ok=(plan_sp==asp and abs(plan_sp[0]*plan_sp[1]-plan_sp[2])<=1 and abs(asp[0]*asp[1]-asp[2])<=1)
+            rows.append(row(typ,"전단연결재 치수[평면도(상면) 상·하↔A-A]",
+                "위쪽: "+(f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}" if tsp else "인식 실패")+" / 아래쪽: "+(f"{bsp[0]}@{bsp[1]:g}={bsp[2]:g}" if bsp else "인식 실패"),
+                f"A-A: {asp[0]}@{asp[1]:g}={asp[2]:g}",
+                "","O" if ok else "X","평면도(상면) 배치의 상·하측 치수와 A-A 비교"))
+        else:
+            rows.append(row(typ,"전단연결재 치수[평면도(상면) 상·하↔A-A]",
+                "위쪽: "+(str(tsp) if tsp else "인식 실패")+" / 아래쪽: "+(str(bsp) if bsp else "인식 실패"),
+                "A-A: "+(str(asp) if asp else "인식 실패"),
+                "","확인","평면도(상면) 상·하/A-A 치수 인식 필요"))
+
+        rows.append(row(typ,"파형철선 형상[A-A]",
+            "평면도(상면): 파형철선 배치",
+            f"A-A 수직 실선 {q17.get('aa_vertical_count',0)}개",
+            "","O" if q17.get("aa_wave") else "확인","A-A 파형철선 수직 실선 형상 확인"))
+
+        p5q=q17.get("phi5_qty",0); p5l=q17.get("phi5_lengths",[])
+        p6q=q17.get("phi6_qty"); p6l=q17.get("phi6_lengths",[])
+        rows.append(row(typ,"Φ5 파형철선[평면도(상면)]",
+            (" / ".join(f"{x}mm×1EA" for x in p5l) if p5l else "오른쪽 길이 인식 실패"),
+            f"Φ5 직접 표기 {p5q}곳 → {p5q}EA" if p5q else "Φ5 표기 인식 실패",
+            "","O" if p5q and len(p5l)==p5q else "확인","55 치수는 Φ5 판정에 사용하지 않음"))
+        rows.append(row(typ,"Φ6 파형철선[평면도(상면)]",
+            f"{p6l[0]}mm / {p6q}EA" if p6l and p6q else "왼쪽 길이/상·하 배치 인식 실패",
+            "Φ5 표기가 없는 주 파형철선",
+            "","O" if p6l and p6q else "확인","평면도(상면) 왼쪽 길이 + 상·하 배치로 산정"))
     # V13: remove obsolete connector diagnostics from V8~V12.
     # These used nearby L= values or old A-A heuristics and can conflict with the geometry-first result.
     obsolete={
@@ -384,6 +430,9 @@ def run_check(dxf,xlsx):
         "Φ5 파형철선 길이/수량",
         "Φ6 파형철선 길이/수량",
         "주 전단연결재(파형철선) 길이/수량",
+        "전단연결재 치수(상면 좌·우↔B-B 좌측)",
+        "파형철선 형상(상면↔A-A)",
+        "전단연결재 치수(상면 상·하↔A-A)",
     }
     rows=[r for r in rows if r["item"] not in obsolete]
     return rows
