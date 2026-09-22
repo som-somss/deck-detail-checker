@@ -333,13 +333,16 @@ def run_check(dxf,xlsx):
             "","O" if p6l and p6q and abs(tsp[0]*tsp[1]-tsp[2])<=1 else "확인",
             "Φ5 표기가 없는 주 파형철선은 Φ6"))
 
+        # V16 direction-aware cross-check:
+        # TOP left/right (vertical-direction dimensions) <-> B-B left-side dimensions.
+        # TOP top/bottom (horizontal-direction placement chain) <-> A-A dimensions.
         expected=sorted(set(p5l+p6l))
         missing=[x for x in expected if x not in bbl]
-        rows.append(row(typ,"전단연결재 길이(상면↔B-B)",
-            ", ".join(map(str,expected)) if expected else "상면 길이 인식 실패",
-            ", ".join(map(str,bbl)) if bbl else "B-B 길이 인식 실패",
+        rows.append(row(typ,"전단연결재 치수(상면 좌·우↔B-B 좌측)",
+            "상면 좌·우: "+(", ".join(map(str,expected)) if expected else "인식 실패"),
+            "B-B 좌측: "+(", ".join(map(str,bbl)) if bbl else "인식 실패"),
             "","O" if expected and not missing else ("X" if expected and bbl else "확인"),
-            ("동일 길이 확인" if expected and not missing else ("B-B 누락: "+", ".join(map(str,missing)) if missing else "길이 확인 필요"))))
+            ("동일 치수 확인" if expected and not missing else ("B-B 누락: "+", ".join(map(str,missing)) if missing else "좌·우/B-B 치수 확인 필요"))))
 
         rows.append(row(typ,"파형철선 형상(상면↔A-A)",
             "상면: 파형철선",
@@ -351,16 +354,16 @@ def run_check(dxf,xlsx):
             same=(tsp==asp)
             ta=abs(tsp[0]*tsp[1]-tsp[2])<=1
             aaok=abs(asp[0]*asp[1]-asp[2])<=1
-            rows.append(row(typ,"전단연결재 배치(상면↔A-A)",
-                f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}",
-                f"{asp[0]}@{asp[1]:g}={asp[2]:g}",
+            rows.append(row(typ,"전단연결재 치수(상면 상·하↔A-A)",
+                f"상면 상·하: {tsp[0]}@{tsp[1]:g}={tsp[2]:g}",
+                f"A-A: {asp[0]}@{asp[1]:g}={asp[2]:g}",
                 "","O" if same and ta and aaok else "X",
                 f"상면 산술 {'O' if ta else 'X'} / A-A 산술 {'O' if aaok else 'X'}"))
         else:
-            rows.append(row(typ,"전단연결재 배치(상면↔A-A)",
-                (f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}" if tsp else "인식 실패"),
-                (f"{asp[0]}@{asp[1]:g}={asp[2]:g}" if asp else "인식 실패"),
-                "","확인","상면/A-A 배치치수 인식 필요"))
+            rows.append(row(typ,"전단연결재 치수(상면 상·하↔A-A)",
+                ("상면 상·하: "+f"{tsp[0]}@{tsp[1]:g}={tsp[2]:g}" if tsp else "상면 상·하: 인식 실패"),
+                ("A-A: "+f"{asp[0]}@{asp[1]:g}={asp[2]:g}" if asp else "A-A: 인식 실패"),
+                "","확인","상면 상·하/A-A 배치치수 인식 필요"))
 
         # Material-table cross check remains conservative until the exact material rows are parsed.
         rows.append(row(typ,"전단연결재 길이/수량(상면↔재료표)",

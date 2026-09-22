@@ -3,7 +3,7 @@ from tkinter import ttk,filedialog,messagebox
 from checker import run_check,export_csv
 class App(tk.Tk):
  def __init__(self):
-  super().__init__();self.title("DECK 상세도 자동 검토기 V15");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
+  super().__init__();self.title("DECK 상세도 자동 검토기 V16");self.geometry("1250x720");self.d=tk.StringVar();self.x=tk.StringVar();self.err=tk.BooleanVar(value=True);self.rows=[];self.ui()
  def ui(self):
   f=ttk.Frame(self,padding=12);f.pack(fill="x")
   for r,(lab,var,ext) in enumerate([("상세도 DXF",self.d,"*.dxf"),("집계표 Excel",self.x,"*.xlsx")]):
