@@ -289,3 +289,167 @@ def read_v7_cross_checks(path):
             "material_shear_kind":material_kind,
         }
     return out
+
+
+# =========================
+# V8 shear-connector checks
+# =========================
+def _num_phi(text):
+    """Return all explicitly written diameters: Φ12, φ16, Ø6 ..."""
+    if not text: return []
+    vals=[]
+    for m in re.finditer(r"[ΦφØ]\s*([0-9]+(?:\.[0-9]+)?)", text):
+        vals.append(float(m.group(1)))
+    return vals
+
+def _connector_detail_info(texts, tx, ty):
+    """
+    Read only explicit information written in the shear-connector-detail zone.
+    Diameter/height are never fixed values.
+    Height is taken from the left-side vertical dimension/text when an explicit
+    numeric value can be tied to TRUSS GR.
+    """
+    zone=[]
+    for x,y,t,layer in texts:
+        dx,dy=x-tx,y-ty
+        # 청람교 양식의 전단연결재 상세가 놓이는 하부 영역을 넓게 수집.
+        if -5200 <= dx <= 5200 and -7000 <= dy <= -4800:
+            zone.append((x,y,t,layer))
+
+    kinds=set(); truss_phi=set(); wave_phi=set()
+    for x,y,t,layer in zone:
+        u=t.upper().replace(" ","")
+        if "TRUSS" in u:
+            kinds.add("TRUSS GR")
+            truss_phi.update(_num_phi(t))
+        if "파형철선" in t:
+            kinds.add("파형철선")
+            wave_phi.update(_num_phi(t))
+
+    # Sometimes the Φ text is next to, rather than in, the TRUSS label.
+    truss_labels=[q for q in zone if "TRUSS" in q[2].upper().replace(" ","")]
+    for lx,ly,lt,ll in truss_labels:
+        for x,y,t,layer in zone:
+            if abs(x-lx)<=700 and abs(y-ly)<=450:
+                truss_phi.update(_num_phi(t))
+
+    # Height: find explicit dimension-like numeric text immediately left of TRUSS detail.
+    # Do not assume 125/135/150; accept a practical dimension range.
+    heights=[]
+    if truss_labels:
+        lx=min(q[0] for q in truss_labels); ly=sum(q[1] for q in truss_labels)/len(truss_labels)
+        for x,y,t,layer in zone:
+            raw=t.replace(",","").strip()
+            if re.fullmatch(r"[0-9]+(?:\.[0-9]+)?",raw):
+                try: v=float(raw)
+                except: continue
+                if 50 <= v <= 300 and lx-1200 <= x <= lx+300 and abs(y-ly)<=900:
+                    heights.append((abs(x-lx)+0.4*abs(y-ly),v))
+    h=None
+    if heights:
+        heights.sort(key=lambda z:z[0])
+        h=heights[0][1]
+
+    kind=""
+    if len(kinds)==1: kind=next(iter(kinds))
+    elif len(kinds)>1: kind="혼합"
+
+    return {
+        "detail_kind":kind,
+        "truss_phi":sorted(truss_phi),
+        "wave_phi":sorted(wave_phi),
+        "truss_height":h,
+    }
+
+def _material_connector_info(texts, tx, ty):
+    """Read explicit connector type/diameter/height written in material-table area."""
+    zone=[]
+    for x,y,t,layer in texts:
+        dx,dy=x-tx,y-ty
+        if 900 <= dx <= 5000 and -6500 <= dy <= -4800:
+            zone.append((x,y,t,layer))
+    kinds=set(); truss_phi=set(); wave_phi=set(); heights=[]
+    for x,y,t,layer in zone:
+        u=t.upper().replace(" ","")
+        if "TRUSS" in u:
+            kinds.add("TRUSS GR"); truss_phi.update(_num_phi(t))
+            # explicit H/height forms if present
+            for m in re.finditer(r"(?:H|높이)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)",t,re.I):
+                heights.append(float(m.group(1)))
+        if "파형철선" in t:
+            kinds.add("파형철선"); wave_phi.update(_num_phi(t))
+    kind=""
+    if len(kinds)==1: kind=next(iter(kinds))
+    elif len(kinds)>1: kind="혼합"
+    return {
+        "material_kind":kind,
+        "material_truss_phi":sorted(truss_phi),
+        "material_wave_phi":sorted(wave_phi),
+        "material_truss_heights":sorted(set(heights)),
+    }
+
+def _aa_shape_kind(msp, texts, tx, ty):
+    """
+    A-A classification from actual line geometry:
+      - wave wire: essentially vertical connector strokes
+      - TRUSS GR: repeated /\ (two sloped segments meeting at an apex)
+    Conservative: ambiguous geometry => "".
+    """
+    h=_nearest_heading(texts,tx,ty,"단면A-A",xhi=0)
+    if not h: return ""
+    hx,hy=h[0],h[1]
+    vertical=0; slopes=[]
+    for e in msp.query("LINE"):
+        try:
+            a=e.dxf.start; b=e.dxf.end
+            mx=(float(a.x)+float(b.x))/2; my=(float(a.y)+float(b.y))/2
+        except: continue
+        if abs(mx-hx)>1300 or not (-1200<=my-hy<=50): continue
+        dx=float(b.x)-float(a.x); dy=float(b.y)-float(a.y)
+        L=(dx*dx+dy*dy)**0.5
+        if not (20<=L<=500): continue
+        if abs(dx)<=max(2,0.08*L) and abs(dy)>=30:
+            vertical+=1
+        elif abs(dx)>=15 and abs(dy)>=15:
+            slopes.append((float(a.x),float(a.y),float(b.x),float(b.y)))
+    # TRUSS needs several sloped legs; avoids deciding from one unrelated chamfer.
+    if len(slopes)>=4: return "TRUSS GR"
+    if vertical>=2 and len(slopes)<4: return "파형철선"
+    return ""
+
+def _bb_shape_kind(msp, texts, tx, ty):
+    """
+    B-B classifier uses geometry only as a supporting cross-check.
+    TRUSS: repeated zig-zag LINE chain; wave wire: curving/spline/polyline-like path.
+    """
+    h=_nearest_heading(texts,tx,ty,"단면B-B")
+    if not h: return ""
+    hx,hy=h[0],h[1]
+    sloped=0; curved=0
+    for e in msp:
+        try:
+            if e.dxftype() in ("LINE","LWPOLYLINE","POLYLINE","SPLINE"):
+                # bounding/representative point
+                if e.dxftype()=="LINE":
+                    a=e.dxf.start; b=e.dxf.end
+                    mx=(float(a.x)+float(b.x))/2; my=(float(a.y)+float(b.y))/2
+                    dx=float(b.x)-float(a.x); dy=float(b.y)-float(a.y)
+                    if abs(mx-hx)<=1000 and -3000<=my-hy<=300:
+                        if abs(dx)>=10 and abs(dy)>=10: sloped+=1
+                else:
+                    curved+=0  # do not guess without reliable extents
+        except: pass
+    if sloped>=6: return "TRUSS GR"
+    return ""
+
+def read_v8_connector_checks(path):
+    doc=ezdxf.readfile(path); msp=doc.modelspace()
+    titles,texts=_find_type_titles_and_texts(msp)
+    out={}
+    for typ,(tx,ty) in titles.items():
+        d=_connector_detail_info(texts,tx,ty)
+        m=_material_connector_info(texts,tx,ty)
+        out[typ]={**d,**m,
+                  "aa_shape_kind":_aa_shape_kind(msp,texts,tx,ty),
+                  "bb_shape_kind":_bb_shape_kind(msp,texts,tx,ty)}
+    return out

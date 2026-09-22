@@ -1,5 +1,5 @@
 import csv
-from dxf_reader import read_dxf_specs, read_v7_cross_checks
+from dxf_reader import read_dxf_specs, read_v7_cross_checks, read_v8_connector_checks
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -24,6 +24,7 @@ def fmt_list(v,unit="mm"):
 def run_check(dxf,xlsx):
     geo,mat,dxf_types,extra=read_dxf_specs(dxf)
     cross=read_v7_cross_checks(dxf)
+    conn=read_v8_connector_checks(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -141,6 +142,52 @@ def run_check(dxf,xlsx):
         else:
             rows.append(row(typ,"전단연결재 종류(A-A)",ak or "인식 실패",mk or "인식 실패","","확인",
                             "전단연결재 상세/재료표 종류 추가 확인 필요"))
+
+        # V8: connector detail / A-A / B-B / material-table cross checks.
+        cc=conn.get(typ,{})
+        dknd=cc.get("detail_kind",""); aknd=cc.get("aa_shape_kind",""); bknd=cc.get("bb_shape_kind","")
+        mknd=cc.get("material_kind","")
+        known=[v for v in (dknd,aknd,bknd,mknd) if v and v!="혼합"]
+        if len(known)>=2:
+            ok=len(set(known))==1
+            rows.append(row(typ,"전단연결재 종류 교차검토",
+                            f"A-A:{aknd or '확인'} / B-B:{bknd or '확인'}",
+                            f"상세:{dknd or '확인'} / 재료표:{mknd or '확인'}","",
+                            "O" if ok else "X",
+                            "" if ok else "A-A/B-B/전단연결재상세/재료표 종류 불일치"))
+        else:
+            rows.append(row(typ,"전단연결재 종류 교차검토",
+                            f"A-A:{aknd or '확인'} / B-B:{bknd or '확인'}",
+                            f"상세:{dknd or '확인'} / 재료표:{mknd or '확인'}","",
+                            "확인","형상/표기 중 2곳 이상 확정 필요"))
+
+        # Diameter is never hard-coded: compare only explicitly read values.
+        dphis=cc.get("truss_phi",[]) if (dknd=="TRUSS GR" or "TRUSS GR" in known) else cc.get("wave_phi",[])
+        mphis=cc.get("material_truss_phi",[]) if (dknd=="TRUSS GR" or "TRUSS GR" in known) else cc.get("material_wave_phi",[])
+        if dphis and mphis:
+            ok=set(dphis)==set(mphis)
+            rows.append(row(typ,"전단연결재 직경",
+                            ", ".join("Φ"+f"{v:g}" for v in dphis),
+                            ", ".join("Φ"+f"{v:g}" for v in mphis),"",
+                            "O" if ok else "X","" if ok else "전단연결재 상세↔재료표 직경 불일치"))
+        else:
+            rows.append(row(typ,"전단연결재 직경",
+                            ", ".join("Φ"+f"{v:g}" for v in dphis) if dphis else "인식 실패",
+                            ", ".join("Φ"+f"{v:g}" for v in mphis) if mphis else "인식 실패","",
+                            "확인","직경은 Φ12/Φ16 등 고정하지 않으며 명시값 인식 필요"))
+
+        # TRUSS height is also variable (125/135/150 etc.) and must match material table.
+        if "TRUSS GR" in known:
+            dh=cc.get("truss_height"); mhs=cc.get("material_truss_heights",[])
+            if dh is not None and mhs:
+                ok=any(abs(dh-v)<=0.5 for v in mhs)
+                rows.append(row(typ,"TRUSS GR 높이",f"{dh:g} mm",
+                                ", ".join(f"{v:g} mm" for v in mhs),"",
+                                "O" if ok else "X","" if ok else "전단연결재 상세 왼쪽 높이↔재료표 높이 불일치"))
+            else:
+                rows.append(row(typ,"TRUSS GR 높이",f"{dh:g} mm" if dh is not None else "인식 실패",
+                                ", ".join(f"{v:g} mm" for v in mhs) if mhs else "인식 실패","",
+                                "확인","높이는 고정하지 않으며 상세 왼쪽 치수와 재료표 명시값을 비교"))
     return rows
 
 def export_csv(rows,path):
