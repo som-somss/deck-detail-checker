@@ -454,6 +454,59 @@ def run_check(dxf,xlsx):
             "평면도(상면): 파형철선",
             f"A-A 수직 실선 {q18.get('aa_vertical_count',0)}개","",
             "O" if q18.get("aa_wave") else "확인","A-A 실제 LINE 형상 확인"))
+
+        # V19 - confirmed wave-wire interpretation
+        q19=conn18.get(typ,{})
+        lv=q19.get("left_long",[]); rv=q19.get("right_long",[]); bbv=q19.get("bb_left",[])
+        p5q=q19.get("phi5_qty",0)
+        top_sp=(q19.get("top_sp") or [None])[0]
+        bot_sp=(q19.get("bottom_sp") or [None])[0]
+        aa_sp=(q19.get("aa_sp") or [None])[0]
+        plan_sp=top_sp or bot_sp
+
+        p5lens=rv[-p5q:] if p5q and len(rv)>=p5q else (rv[-2:] if rv else [])
+        p6len=lv[-1] if lv else None
+        p6q=(plan_sp[0]+1) if plan_sp else None
+        p6arith=bool(plan_sp and abs(plan_sp[0]*plan_sp[1]-plan_sp[2])<=1)
+
+        rows.append(row(typ,"Φ5 파형철선 길이/수량[V19]",
+            " / ".join(f"{x}mm×1EA" for x in p5lens) if p5lens else "평면도(상면) 오른쪽 치수 인식 실패",
+            f"Φ5 직접표기 {p5q}곳 → {p5q}EA" if p5q else "Φ5 직접표기 인식 실패","",
+            "O" if p5q and len(p5lens)==p5q else "확인",
+            "오른쪽 치수에서 Φ5 길이 판독"))
+
+        rows.append(row(typ,"Φ6 파형철선 길이/수량[V19]",
+            f"{p6len}mm × {p6q}EA" if p6len and p6q else "평면도(상면) 왼쪽 길이 또는 상부 배치 인식 실패",
+            f"{plan_sp[0]}@{plan_sp[1]:g}={plan_sp[2]:g} → {p6q}EA" if plan_sp else "n@간격 인식 실패","",
+            "O" if p6len and p6q and p6arith else ("X" if plan_sp and not p6arith else "확인"),
+            "왼쪽 치수=Φ6 길이, n간격→n+1EA"))
+
+        required=sorted(set(([p6len] if p6len else [])+p5lens))
+        missing=[x for x in required if x not in bbv]
+        bbres=("O" if not missing else "X") if required and bbv else "확인"
+        rows.append(row(typ,"전단연결재 길이[평면도(상면)↔B-B]",
+            "상면 확정: "+(", ".join(map(str,required)) if required else "인식 실패"),
+            "B-B 좌측: "+(", ".join(map(str,bbv)) if bbv else "인식 실패"),"",bbres,
+            ("모든 길이 존재" if bbres=="O" else ("누락: "+", ".join(map(str,missing)) if missing else "길이 확인 필요"))))
+
+        if plan_sp and aa_sp:
+            aa_arith=abs(aa_sp[0]*aa_sp[1]-aa_sp[2])<=1
+            aares="O" if plan_sp==aa_sp and p6arith and aa_arith else "X"
+        else: aares="확인"
+        rows.append(row(typ,"전단연결재 배치[평면도(상면)↔A-A]",
+            f"{plan_sp[0]}@{plan_sp[1]:g}={plan_sp[2]:g}" if plan_sp else "상면 배치 인식 실패",
+            f"{aa_sp[0]}@{aa_sp[1]:g}={aa_sp[2]:g}" if aa_sp else "A-A 배치 인식 실패","",aares,
+            "평면도(상면) 상·하 배치와 A-A 비교"))
+
+        rows.append(row(typ,"파형철선 형상[A-A]",
+            "평면도(상면): 파형철선",f"A-A 수직 실선 {q19.get('aa_vertical_count',0)}개","",
+            "O" if q19.get("aa_wave") else "확인","A-A 수직 실선 형상 확인"))
+
+        rows.append(row(typ,"파형철선 길이/수량[상면↔재료표]",
+            "Φ5: "+(" / ".join(f"{x}×1EA" for x in p5lens) if p5lens else "확인")
+            +" ; Φ6: "+(f"{p6len}×{p6q}EA" if p6len and p6q else "확인"),
+            "재료표 Φ5/Φ6 길이별 수량","",
+            "확인","재료표 길이별 수량 매핑은 아직 보수적으로 확인 처리"))
     # V13: remove obsolete connector diagnostics from V8~V12.
     # These used nearby L= values or old A-A heuristics and can conflict with the geometry-first result.
     obsolete={
