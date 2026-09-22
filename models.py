@@ -21,3 +21,12 @@ class Spec:
         if self.length is None:
             return self.width_text()
         return f"{self.width_text()} × {self.length:.3f}"
+
+@dataclass
+class ExcelInfo:
+    spec: Optional[Spec]=None
+    thickness: Optional[float]=None
+    rib_length: Optional[float]=None
+    rib_thickness: Optional[float]=None
+    rib_count: Optional[int]=None
+    deck_kind: str=""

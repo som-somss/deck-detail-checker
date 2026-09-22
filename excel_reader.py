@@ -1,5 +1,5 @@
 import re, zipfile, xml.etree.ElementTree as ET
-from models import Spec
+from models import Spec, ExcelInfo
 
 NS="{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
@@ -43,17 +43,23 @@ def read_excel_specs(path):
                 if c.attrib.get("t")=="s":
                     val=ss[int(val)]
                 d[_col(c.attrib["r"])]=val
-            typ=d.get("B","").strip()
+            typ=str(d.get("B","")).strip()
             if not re.fullmatch(r"M\d{2}-\d+(?:-\d+)?",typ,re.I):
                 continue
             def n(k):
                 try: return float(d[k])
                 except: return None
             c,e,g=n("C"),n("E"),n("G")
-            # 일반형: C와 E가 같거나 한쪽만 존재
-            # 경사형: C=상부폭, E=하부폭, G=길이
             b1=c if c is not None else e
             b2=e if e is not None else b1
-            if b1 is not None and g is not None:
-                out[typ]=Spec(typ,b1,b2,g)
+            spec=Spec(typ,b1,b2,g) if b1 is not None and g is not None else None
+            cnt=n("M")
+            out[typ]=ExcelInfo(
+                spec=spec,
+                thickness=n("J"),
+                rib_length=n("K"),
+                rib_thickness=n("L"),
+                rib_count=int(round(cnt)) if cnt is not None else None,
+                deck_kind=str(d.get("P","")).strip()
+            )
     return out
