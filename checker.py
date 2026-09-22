@@ -1,6 +1,7 @@
 import csv
 from dxf_reader import read_dxf_specs, read_v7_cross_checks, read_v8_connector_checks
 from connector_v9 import read_connector_v9
+from connector_v10 import analyze as read_connector_v10
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -27,6 +28,7 @@ def run_check(dxf,xlsx):
     cross=read_v7_cross_checks(dxf)
     conn=read_v8_connector_checks(dxf)
     conn9=read_connector_v9(dxf)
+    conn10=read_connector_v10(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -216,6 +218,20 @@ def run_check(dxf,xlsx):
                 "상세 L="+(",".join(f"{x:g}" for x in dl) if dl else "확인"),
                 "O" if len(sets)>=2 and common else "확인",
                 "" if len(sets)>=2 and common else "상면 좌/우·B-B·상세의 종류/직경별 길이 연결 확인 필요"))
+        # V10 - user-defined connector rules (test output)
+        z10=conn10.get(typ,{})
+        for _x,_y,n,sp,total,raw in z10.get("spacing",[]):
+            ok=abs(n*sp-total)<=0.5
+            rows.append(row(typ,"전단연결재 간격 산술검토",
+                f"{n}@{sp:g}={total:g}","","","O" if ok else "X",
+                "" if ok else f"{n}×{sp:g}≠{total:g}"))
+        q55=z10.get("phi5_55_count",0)
+        if q55:
+            cand=z10.get("length_candidates",[])
+            rows.append(row(typ,"Φ5 파형철선(끝단 55 기준)",
+                f"끝단 55: {q55}곳 → Φ5 {q55}EA",
+                "세로길이 후보: "+(", ".join(f"{v:g}" for v in cand) if cand else "인식 실패"),"",
+                "확인","55로 수량 판정. 대응 좌/우 세로길이만 최종 매핑"))
     return rows
 
 def export_csv(rows,path):
