@@ -6,6 +6,7 @@ from connector_shape_v11 import analyze as read_shape_v11
 from connector_v13 import analyze as read_connector_v13
 from connector_v15 import analyze as read_connector_v15
 from connector_v17 import analyze as read_connector_v17
+from connector_v18 import analyze as read_connector_v18
 from excel_reader import read_excel_specs
 
 TOL=0.0015
@@ -37,6 +38,7 @@ def run_check(dxf,xlsx):
     conn13=read_connector_v13(dxf)
     conn15=read_connector_v15(dxf)
     conn17=read_connector_v17(dxf)
+    conn18=read_connector_v18(dxf)
     xls=read_excel_specs(xlsx)
     types=sorted(dxf_types | set(mat) | set(geo) | set(xls) | set(extra) | set(cross))
     rows=[]
@@ -416,6 +418,42 @@ def run_check(dxf,xlsx):
             f"{p6l[0]}mm / {p6q}EA" if p6l and p6q else "왼쪽 길이/상·하 배치 인식 실패",
             "Φ5 표기가 없는 주 파형철선",
             "","O" if p6l and p6q else "확인","평면도(상면) 왼쪽 길이 + 상·하 배치로 산정"))
+
+        # V18: DIMENSION definition-point based classification
+        q18=conn18.get(typ,{})
+        lv=q18.get("left_long",[]);rv=q18.get("right_long",[]);bv=q18.get("bb_left",[])
+        exp=sorted(set((lv[-1:] if lv else [])+(rv[-2:] if rv else [])))
+        miss=[x for x in exp if x not in bv]
+        rows.append(row(typ,"전단연결재 치수[V18 평면도(상면) 좌·우↔B-B 좌측]",
+            "왼쪽: "+(", ".join(map(str,lv)) if lv else "인식 실패")+" / 오른쪽: "+(", ".join(map(str,rv)) if rv else "인식 실패"),
+            "B-B 왼쪽: "+(", ".join(map(str,bv)) if bv else "인식 실패"),"",
+            "O" if exp and not miss else ("X" if exp and bv else "확인"),
+            "DIMENSION 정의점/연장선 위치 기준"))
+
+        ts=(q18.get("top_sp") or [None])[0];bs=(q18.get("bottom_sp") or [None])[0];aa=(q18.get("aa_sp") or [None])[0]
+        ps=ts or bs
+        if ps and aa:
+            ok=ps==aa and abs(ps[0]*ps[1]-ps[2])<=1 and abs(aa[0]*aa[1]-aa[2])<=1
+            res="O" if ok else "X"
+        else:res="확인"
+        rows.append(row(typ,"전단연결재 치수[V18 평면도(상면) 상·하↔A-A]",
+            "위쪽: "+(f"{ts[0]}@{ts[1]:g}={ts[2]:g}" if ts else "인식 실패")+" / 아래쪽: "+(f"{bs[0]}@{bs[1]:g}={bs[2]:g}" if bs else "인식 실패"),
+            "A-A: "+(f"{aa[0]}@{aa[1]:g}={aa[2]:g}" if aa else "인식 실패"),"",res,
+            "DIMENSION 정의점/연장선 위치 기준"))
+
+        p5=q18.get("phi5_qty",0);p5l=q18.get("phi5_lengths",[]);p6l=q18.get("phi6_lengths",[]);p6q=q18.get("phi6_qty")
+        rows.append(row(typ,"Φ5 파형철선[V18]",
+            " / ".join(f"{x}mm×1EA" for x in p5l) if p5l else "평면도(상면) 오른쪽 길이 인식 실패",
+            f"Φ5 직접표기 {p5}곳 → {p5}EA" if p5 else "Φ5 표기 인식 실패","",
+            "O" if p5 and len(p5l)==p5 else "확인","오른쪽 DIMENSION + Φ5 직접표기"))
+        rows.append(row(typ,"Φ6 파형철선[V18]",
+            f"{p6l[0]}mm / {p6q}EA" if p6l and p6q else "평면도(상면) 왼쪽 길이/배치 인식 실패",
+            "Φ5 표기가 없는 주 파형철선","",
+            "O" if p6l and p6q else "확인","왼쪽 DIMENSION + 상·하 n@간격"))
+        rows.append(row(typ,"파형철선 형상[V18 A-A]",
+            "평면도(상면): 파형철선",
+            f"A-A 수직 실선 {q18.get('aa_vertical_count',0)}개","",
+            "O" if q18.get("aa_wave") else "확인","A-A 실제 LINE 형상 확인"))
     # V13: remove obsolete connector diagnostics from V8~V12.
     # These used nearby L= values or old A-A heuristics and can conflict with the geometry-first result.
     obsolete={
@@ -433,6 +471,11 @@ def run_check(dxf,xlsx):
         "전단연결재 치수(상면 좌·우↔B-B 좌측)",
         "파형철선 형상(상면↔A-A)",
         "전단연결재 치수(상면 상·하↔A-A)",
+        "전단연결재 치수[평면도(상면) 좌·우↔B-B 좌측]",
+        "전단연결재 치수[평면도(상면) 상·하↔A-A]",
+        "파형철선 형상[A-A]",
+        "Φ5 파형철선[평면도(상면)]",
+        "Φ6 파형철선[평면도(상면)]",
     }
     rows=[r for r in rows if r["item"] not in obsolete]
     return rows
